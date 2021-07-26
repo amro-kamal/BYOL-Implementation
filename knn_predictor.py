@@ -58,7 +58,6 @@ class BenchmarkModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # training_step defines the train loop. It is independent of forward
-        self.step+=1
         (x1,x2), y = batch
         z1 , z2  = self.online_resnet(x1), self.target_resnet(x2) # projections, n-by-d
         p1  = self.predictor(z1) # predictions, n-by-d
@@ -68,8 +67,9 @@ class BenchmarkModule(pl.LightningModule):
         for target_params, online_params in zip(self.target_resnet.parameters(), self.online_resnet.parameters()):
             target_params = target_params * self.taw + (1-self.taw) * online_params
         #TODO: update taw
-        self.taw=1- (1-args.taw) * (math.cos(math.pi*(k/K)) + 1)/2
+        self.taw=1- (1-self.taw) * (math.cos(math.pi*(self.step/self.total_steps)) + 1)/2
         self.step+=1
+        print(f'step {step}')
 
         self.log('train_loss', loss)
         return loss
