@@ -57,8 +57,8 @@ class SimSiam(BenchmarkModule):
         self.target_resnet = resnet18()   #copy.copy(self.online_resnet)  
         self.taw=taw 
         self.step=0
-        self.total_steps=len(self.train_dataloader.sampler) * args.epochs
-        self.mse_loss=torch.MSELoss()
+        self.total_steps=len(dataloader_kNN) * args.epochs
+        self.mse_loss=torch.nn.MSELoss()
 
         self.online_resnet.fc = nn.Sequential(nn.Linear(in_dim, h_dim, bias=False),  #projection [512x1024]
                                         nn.BatchNorm1d(h_dim),
