@@ -62,21 +62,27 @@ class BenchmarkModule(pl.LightningModule):
         z1 , z2  = self.online_resnet(x1), self.target_resnet(x2) # projections, n-by-d
         p1  = self.predictor(z1) # predictions, n-by-d
 
-        loss= self.mse_loss(p1, z2) # loss
+        loss1= self.mse_loss(p1, z2) # loss
+        z_1 , z_2  = self.online_resnet(x2), self.target_resnet(x2) # projections, n-by-d
+        p_1  = self.predictor(z_1) # predictions, n-by-d
+
+        loss2= self.mse_loss(p_1, z_2) # loss
+        loss=loss1+loss2
+
         #TODO:update the target network
         for target_params, online_params in zip(self.target_resnet.parameters(), self.online_resnet.parameters()):
             target_params = target_params * self.taw + (1-self.taw) * online_params
         #TODO: update taw
         self.taw=1- (1-self.taw) * (math.cos(math.pi*(self.step/self.total_steps)) + 1)/2
         self.step+=1
-        print(f'step {step}')
+        # print(f'step {step}')
 
         self.log('train_loss', loss)
         return loss
 
     def training_epoch_end(self, outputs):
         # update feature bank at the end of each training epoch
-        self.resnet.eval()
+        self.online_resnet.eval()
         self.feature_bank = []
         self.targets_bank = []
         with torch.no_grad():
@@ -86,20 +92,20 @@ class BenchmarkModule(pl.LightningModule):
                 if self.gpus > 0:
                     img = img.cuda()
                     target = target.cuda()
-                feature = self.resnet(img).squeeze()
+                feature = self.online_resnet(img).squeeze()
                 feature = F.normalize(feature, dim=1)
                 self.feature_bank.append(feature)
                 self.targets_bank.append(target)
         self.feature_bank = torch.cat(self.feature_bank, dim=0).t().contiguous()
         self.targets_bank = torch.cat(self.targets_bank, dim=0).t().contiguous()
-        self.resnet.train()
+        self.online_resnet.train()
 
     def validation_step(self, batch, batch_idx):
         # we can only do kNN predictions once we have a feature bank
         if hasattr(self, 'feature_bank') and hasattr(self, 'targets_bank'):
             # images, targets, _ = batch
             images, targets = batch
-            feature = self.resnet(images).squeeze()
+            feature = self.online_resnet(images).squeeze()
             feature = F.normalize(feature, dim=1)
             pred_labels = knn_predict(feature, self.feature_bank, self.targets_bank, self.classes, self.knn_k, self.knn_t)
             num = images.size(0)
