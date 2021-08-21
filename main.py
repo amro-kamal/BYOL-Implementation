@@ -20,7 +20,7 @@ import argparse
 from resnet import resnet18 
 import os
 from knn_predictor import BenchmarkModule
-from data import simsiam_cifar10_loader, cifar10_loader
+from data import byol_cifar10_loader, cifar10_loader
 import copy
 
 parser = argparse.ArgumentParser(description='SimSiam Training')
@@ -44,12 +44,13 @@ parser.add_argument('--taw', default=0.996, type=float)
 
 parser.add_argument('--save-dir', default = '/gdrive/MyDrive/simsiam/', type=str)
 parser.add_argument('--exp-name', default = 'resnet_2048_512', type=str)
+parser.add_argument('--version', default = None, type=str)
 
 args=parser.parse_args()
 
 logger = TensorBoardLogger(os.path.join(args.save_dir,args.exp_name), name="tensorboard")
 
-class SimSiam(BenchmarkModule):
+class BYOL(BenchmarkModule):
 
     def __init__(self, dataloader_kNN, gpus=1, classes=10, knn_k=args.knn_k, knn_t=args.knn_t, in_dim=args.in_dim,h_dim=args.h_dim,out_dim=args.out_dim,taw=args.taw, model_path=None):
         super().__init__(dataloader_kNN, gpus, classes, knn_k, knn_t)
@@ -90,11 +91,11 @@ class SimSiam(BenchmarkModule):
         embedding = self.online_resnet(x)
         return embedding
 
-    def D(self, p, z): # negative cosine similarity
+    def mse_loss(self, p, z): # negative cosine similarity
         z = z.detach() # stop gradient
         p = F.normalize(p, dim=1) # l2-normalize each emb vector
         z = F.normalize(z, dim=1) # l2-normalize each emb vector
-        return -(p*z).sum(dim=1).mean()
+        return 2-2*(p*z).sum(dim=1).mean()
 
 
     def configure_optimizers(self):
@@ -106,6 +107,7 @@ if __name__ == '__main__':
 
     log_dir = os.path.join(args.save_dir,args.exp_name,'tensorboard')
     save_dir = os.path.join(args.save_dir,args.exp_name,'model.ckpt')
+    logger = TensorBoardLogger(os.path.join(args.save_dir,args.exp_name), name="tensorboard", version=args.version)
 
     seed_everything(args.seed)
 
@@ -114,11 +116,11 @@ if __name__ == '__main__':
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
     knn_train_loader, knn_val_loader=cifar10_loader(args.batch_size)
-    simsiam = SimSiam(knn_train_loader,model_path=args.model_path)
+    byol = BYOL(knn_train_loader,model_path=args.model_path)
     trainer = Trainer( gpus=1, max_epochs=args.epochs, min_epochs=1, auto_lr_find=False, auto_scale_batch_size=False,
                       progress_bar_refresh_rate=1,callbacks=[lr_monitor],logger=logger)
 
-    train_loader, _ = simsiam_cifar10_loader(args.batch_size)
+    train_loader, _ = byol_cifar10_loader(args.batch_size)
     
-    trainer.fit(simsiam, train_loader, knn_val_loader)
-    save({'online_resnet':simsiam.online_resnet.state_dict(),'predictor':simsiam.predictor.state_dict()},  save_dir)
+    trainer.fit(byol, train_loader, knn_val_loader)
+    save({'online_resnet':byol.online_resnet.state_dict(), 'target_resnet':byol.target_resnet.state_dict() ,'predictor':byol.predictor.state_dict()},  save_dir)
